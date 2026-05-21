@@ -99,11 +99,11 @@ const productSchema = new mongoose.Schema(
 );
 
 // Create search index for text search
-productSchema.index({ name: "text", description: "text", tags: "text" });
+// productSchema.index({ name: "text", description: "text", tags: "text" });s
 // Index for common queries
-productSchema.index({ category: 1, featured: 1 });
-productSchema.index({ bestseller: 1 });
-productSchema.index({ slug: 1 });
+// productSchema.index({ category: 1, featured: 1 });
+// productSchema.index({ bestseller: 1 });
+// productSchema.index({ slug: 1 });
 
 const Product = mongoose.model("Product", productSchema);
 export default Product;
