@@ -1,89 +1,264 @@
-// controllers/uploadController.js — FIXED
+// // controllers/uploadController.js — FIXED
+// import path from "path";
+// import fs from "fs";
+// import sharp from "sharp";
+// import { fileURLToPath } from "url";
+
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = path.dirname(__filename);
+// const UPLOAD_DIR = path.join(__dirname, "../../uploads/products");
+
+// if (!fs.existsSync(UPLOAD_DIR)) {
+//     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// }
+
+// // ─── Disable sharp's file cache (prevents Windows EPERM) ───
+// sharp.cache(false);
+
+// // POST /api/upload
+// export const uploadImage = async (req, res, next) => {
+//     try {
+//         if (!req.file) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Koi image select nahi ki! Please upload an image.",
+//             });
+//         }
+
+//         const originalPath = req.file.path;
+//         const baseName = `poster-${Date.now()}`;
+
+//         // ── Read file into buffer FIRST so Sharp doesn't lock the file ──
+//         const inputBuffer = fs.readFileSync(originalPath);
+
+//         // Optimized full-size
+//         const optimizedFileName = `${baseName}.webp`;
+//         const optimizedPath = path.join(UPLOAD_DIR, optimizedFileName);
+
+//         await sharp(inputBuffer)          // ← buffer, not file path
+//             .resize(1200, 1600, {
+//                 fit: "inside",
+//                 withoutEnlargement: true,
+//             })
+//             .webp({ quality: 85 })
+//             .toFile(optimizedPath);
+
+//         // Thumbnail
+//         const thumbFileName = `${baseName}-thumb.webp`;
+//         const thumbPath = path.join(UPLOAD_DIR, thumbFileName);
+
+//         await sharp(inputBuffer)          // ← same buffer, reuse it
+//             .resize(400, 533, {
+//                 fit: "inside",
+//                 withoutEnlargement: true,
+//             })
+//             .webp({ quality: 75 })
+//             .toFile(thumbPath);
+
+//         // ── NOW safe to delete the original temp file ──
+//         try {
+//             fs.unlinkSync(originalPath);
+//         } catch (unlinkErr) {
+//             // If still locked, schedule cleanup (non-blocking)
+//             console.warn("Could not delete temp file immediately, retrying...");
+//             setTimeout(() => {
+//                 try { fs.unlinkSync(originalPath); } catch { /* ignore */ }
+//             }, 1000);
+//         }
+
+//         // Build URLs
+//         console.log('baseUrl==========>', req)
+//         const baseUrl = `${req.protocol}://${req.get("host")}`;
+//         console.log('baseUrl==========>', baseUrl)
+//         const imageUrl = `${baseUrl}/uploads/products/${optimizedFileName}`;
+//         const thumbUrl = `${baseUrl}/uploads/products/${thumbFileName}`;
+
+//         const stats = fs.statSync(optimizedPath);
+//         const fileSizeKB = Math.round(stats.size / 1024);
+
+//         res.status(201).json({
+//             success: true,
+//             message: "Image upload ho gaya! 🎉",
+//             data: {
+//                 url: imageUrl,
+//                 thumbnail: thumbUrl,
+//                 fileName: optimizedFileName,
+//                 size: `${fileSizeKB} KB`,
+//             },
+//         });
+//     } catch (error) {
+//         if (req.file && fs.existsSync(req.file.path)) {
+//             try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+//         }
+//         next(error);
+//     }
+// };
+
+// // POST /api/upload/multiple
+// export const uploadMultipleImages = async (req, res, next) => {
+//     try {
+//         if (!req.files || req.files.length === 0) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Koi images select nahi ki!",
+//             });
+//         }
+
+//         const baseUrl = `${req.protocol}://${req.get("host")}`;
+//         const uploadedImages = [];
+
+//         for (const file of req.files) {
+//             const baseName = `poster-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+//             const optimizedFileName = `${baseName}.webp`;
+//             const optimizedPath = path.join(UPLOAD_DIR, optimizedFileName);
+
+//             // ── Buffer approach for each file ──
+//             const inputBuffer = fs.readFileSync(file.path);
+
+//             await sharp(inputBuffer)
+//                 .resize(1200, 1600, { fit: "inside", withoutEnlargement: true })
+//                 .webp({ quality: 85 })
+//                 .toFile(optimizedPath);
+
+//             try { fs.unlinkSync(file.path); } catch { /* retry later */ }
+
+//             uploadedImages.push({
+//                 url: `${baseUrl}/uploads/products/${optimizedFileName}`,
+//                 fileName: optimizedFileName,
+//             });
+//         }
+
+//         res.status(201).json({
+//             success: true,
+//             message: `${uploadedImages.length} images upload ho gayi! 🎉`,
+//             data: uploadedImages,
+//         });
+//     } catch (error) {
+//         if (req.files) {
+//             req.files.forEach((file) => {
+//                 try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch { /* ignore */ }
+//             });
+//         }
+//         next(error);
+//     }
+// };
+
+// // DELETE stays the same
+// export const deleteImage = async (req, res, next) => {
+//     try {
+//         const { fileName } = req.params;
+//         const safeName = path.basename(fileName);
+//         const filePath = path.join(UPLOAD_DIR, safeName);
+//         const thumbPath = path.join(UPLOAD_DIR, safeName.replace(".webp", "-thumb.webp"));
+
+//         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+//         if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
+
+//         res.json({ success: true, message: "Image delete ho gayi!" });
+//     } catch (error) {
+//         next(error);
+//     }
+// };
+
+
+
+// controllers/uploadController.js — CLOUDINARY VERSION
 import path from "path";
 import fs from "fs";
 import sharp from "sharp";
+import { v2 as cloudinary } from "cloudinary";
 import { fileURLToPath } from "url";
+
+// Configure Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true,
+});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const UPLOAD_DIR = path.join(__dirname, "../../uploads/products");
 
+// Keep local folder as fallback for existing images
 if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-// ─── Disable sharp's file cache (prevents Windows EPERM) ───
+// Disable sharp's file cache
 sharp.cache(false);
 
-// POST /api/upload
+// Helper: Upload buffer to Cloudinary
+const uploadToCloudinary = (buffer, publicId) => {
+    return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+            {
+                folder: "printala/products",
+                public_id: publicId,
+                format: "webp",
+                overwrite: true,
+            },
+            (error, result) => {
+                if (error) reject(error);
+                else resolve(result);
+            }
+        );
+        stream.end(buffer);
+    });
+};
+
+// POST /api/upload — Single image
 export const uploadImage = async (req, res, next) => {
     try {
         if (!req.file) {
             return res.status(400).json({
                 success: false,
-                message: "Koi image select nahi ki! Please upload an image.",
+                message: "Please select an image to upload.",
             });
         }
 
         const originalPath = req.file.path;
         const baseName = `poster-${Date.now()}`;
 
-        // ── Read file into buffer FIRST so Sharp doesn't lock the file ──
+        // Read file into buffer
         const inputBuffer = fs.readFileSync(originalPath);
 
-        // Optimized full-size
-        const optimizedFileName = `${baseName}.webp`;
-        const optimizedPath = path.join(UPLOAD_DIR, optimizedFileName);
-
-        await sharp(inputBuffer)          // ← buffer, not file path
+        // Optimize with Sharp
+        const optimizedBuffer = await sharp(inputBuffer)
             .resize(1200, 1600, {
                 fit: "inside",
                 withoutEnlargement: true,
             })
             .webp({ quality: 85 })
-            .toFile(optimizedPath);
+            .toBuffer();
 
         // Thumbnail
-        const thumbFileName = `${baseName}-thumb.webp`;
-        const thumbPath = path.join(UPLOAD_DIR, thumbFileName);
-
-        await sharp(inputBuffer)          // ← same buffer, reuse it
+        const thumbBuffer = await sharp(inputBuffer)
             .resize(400, 533, {
                 fit: "inside",
                 withoutEnlargement: true,
             })
             .webp({ quality: 75 })
-            .toFile(thumbPath);
+            .toBuffer();
 
-        // ── NOW safe to delete the original temp file ──
-        try {
-            fs.unlinkSync(originalPath);
-        } catch (unlinkErr) {
-            // If still locked, schedule cleanup (non-blocking)
-            console.warn("Could not delete temp file immediately, retrying...");
-            setTimeout(() => {
-                try { fs.unlinkSync(originalPath); } catch { /* ignore */ }
-            }, 1000);
-        }
+        // Upload to Cloudinary
+        const [mainResult, thumbResult] = await Promise.all([
+            uploadToCloudinary(optimizedBuffer, baseName),
+            uploadToCloudinary(thumbBuffer, `${baseName}-thumb`),
+        ]);
 
-        // Build URLs
-        console.log('baseUrl==========>', req)
-        const baseUrl = `${req.protocol}://${req.get("host")}`;
-        console.log('baseUrl==========>', baseUrl)
-        const imageUrl = `${baseUrl}/uploads/products/${optimizedFileName}`;
-        const thumbUrl = `${baseUrl}/uploads/products/${thumbFileName}`;
-
-        const stats = fs.statSync(optimizedPath);
-        const fileSizeKB = Math.round(stats.size / 1024);
+        // Delete temp file
+        try { fs.unlinkSync(originalPath); } catch { /* ignore */ }
 
         res.status(201).json({
             success: true,
-            message: "Image upload ho gaya! 🎉",
+            message: "Image uploaded successfully!",
             data: {
-                url: imageUrl,
-                thumbnail: thumbUrl,
-                fileName: optimizedFileName,
-                size: `${fileSizeKB} KB`,
+                url: mainResult.secure_url,
+                thumbnail: thumbResult.secure_url,
+                fileName: baseName,
+                size: `${Math.round(mainResult.bytes / 1024)} KB`,
             },
         });
     } catch (error) {
@@ -94,43 +269,40 @@ export const uploadImage = async (req, res, next) => {
     }
 };
 
-// POST /api/upload/multiple
+// POST /api/upload/multiple — Multiple images
 export const uploadMultipleImages = async (req, res, next) => {
     try {
         if (!req.files || req.files.length === 0) {
             return res.status(400).json({
                 success: false,
-                message: "Koi images select nahi ki!",
+                message: "No images selected!",
             });
         }
 
-        const baseUrl = `${req.protocol}://${req.get("host")}`;
         const uploadedImages = [];
 
         for (const file of req.files) {
             const baseName = `poster-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-            const optimizedFileName = `${baseName}.webp`;
-            const optimizedPath = path.join(UPLOAD_DIR, optimizedFileName);
-
-            // ── Buffer approach for each file ──
             const inputBuffer = fs.readFileSync(file.path);
 
-            await sharp(inputBuffer)
+            const optimizedBuffer = await sharp(inputBuffer)
                 .resize(1200, 1600, { fit: "inside", withoutEnlargement: true })
                 .webp({ quality: 85 })
-                .toFile(optimizedPath);
+                .toBuffer();
 
-            try { fs.unlinkSync(file.path); } catch { /* retry later */ }
+            const result = await uploadToCloudinary(optimizedBuffer, baseName);
+
+            try { fs.unlinkSync(file.path); } catch { /* ignore */ }
 
             uploadedImages.push({
-                url: `${baseUrl}/uploads/products/${optimizedFileName}`,
-                fileName: optimizedFileName,
+                url: result.secure_url,
+                fileName: baseName,
             });
         }
 
         res.status(201).json({
             success: true,
-            message: `${uploadedImages.length} images upload ho gayi! 🎉`,
+            message: `${uploadedImages.length} images uploaded!`,
             data: uploadedImages,
         });
     } catch (error) {
@@ -143,18 +315,26 @@ export const uploadMultipleImages = async (req, res, next) => {
     }
 };
 
-// DELETE stays the same
+// DELETE — Delete from Cloudinary
 export const deleteImage = async (req, res, next) => {
     try {
         const { fileName } = req.params;
-        const safeName = path.basename(fileName);
-        const filePath = path.join(UPLOAD_DIR, safeName);
-        const thumbPath = path.join(UPLOAD_DIR, safeName.replace(".webp", "-thumb.webp"));
+        const publicId = `printala/products/${path.basename(fileName)}`;
 
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-        if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
+        // Try to delete from Cloudinary
+        try {
+            await cloudinary.uploader.destroy(publicId);
+            // Also try thumbnail
+            await cloudinary.uploader.destroy(`${publicId}-thumb`);
+        } catch {
+            // Image might not exist on Cloudinary, that's ok
+        }
 
-        res.json({ success: true, message: "Image delete ho gayi!" });
+        // Also try to delete local file if it exists
+        const localPath = path.join(UPLOAD_DIR, path.basename(fileName));
+        if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+
+        res.json({ success: true, message: "Image deleted!" });
     } catch (error) {
         next(error);
     }
